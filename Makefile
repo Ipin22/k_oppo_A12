@@ -408,6 +408,7 @@ KBUILD_AFLAGS_MODULE  := -DMODULE
 KBUILD_CFLAGS_MODULE  := -DMODULE
 KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
 GCC_PLUGINS_CFLAGS :=
+TARGET_BUILD_VARIANT := user
 
 #ifdef VENDOR_EDIT
 #Haiping.Zhong@PSW.AD.BuildConfig.BaseConfig.0, 2019/01/08, Add for build root disable dm verity
@@ -431,7 +432,7 @@ endif
 #//Liang.Zhang@PSW.TECH.Bootup, 2018/10/19, Add for kernel monitor whole bootup
 #ifdef HANG_OPPO_ALL
 #Kun Hu@TECH.BSP.Stability.PROJECT_PHOENIX, 2019/06/08, Remove phoenix for Self Stability Test Version
-ifneq ($(SPECIAL_OPPO_CONFIG),1)
+ifeq ($(SPECIAL_OPPO_CONFIG),1)
 KBUILD_CFLAGS +=   -DHANG_OPPO_ALL
 KBUILD_CPPFLAGS += -DHANG_OPPO_ALL
 CFLAGS_KERNEL +=   -DHANG_OPPO_ALL
@@ -439,10 +440,10 @@ CFLAGS_MODULE +=   -DHANG_OPPO_ALL
 endif
 #ifdef VENDOR_EDIT
 #Bin.Yan@PSW.AD.BuildConfig.BaseConfig.1068615, 2017/08/28,Add for disallow system remount
-ifneq ($(SPECIAL_OPPO_CONFIG),1)
-ifneq ($(SPECIAL_OPPO_PERFORMANCE),1)
-    ifneq ($(filter release,$(OPPO_BUILD_TYPE)),)
-        ifneq ($(OPPO_ALLOW_KEY_INTERFACES),true)
+ifeq ($(SPECIAL_OPPO_CONFIG),1)
+ifeq ($(SPECIAL_OPPO_PERFORMANCE),1)
+    ifeq ($(filter release,$(OPPO_BUILD_TYPE)),)
+        ifeq ($(OPPO_ALLOW_KEY_INTERFACES),true)
             ifeq ($(filter allnetcttest allnetcmcctest allnetcmccfield allnetctfield,$(NET_BUILD_TYPE)),)
                 KBUILD_CFLAGS += -DOPPO_DISALLOW_KEY_INTERFACES
             endif
@@ -510,7 +511,7 @@ CFLAGS_MODULE +=   -DVENDOR_EDIT
 
 #ifdef VENDOR_EDIT
 #runyu.ouyang@BSP.storage.sdcard, 2019/05/23, Add for sdcard
-ifneq ($(filter full_oppo6779_19011 full_oppo6779_19301, $(TARGET_PRODUCT)),)
+ifeq ($(filter full_oppo6779_19011 full_oppo6779_19301, $(TARGET_PRODUCT)),)
 KBUILD_CFLAGS += -DOPPO_P90M_SDCARD_FLAG
 KBUILD_CPPFLAGS += -DOPPO_P90M_SDCARD_FLAG
 CFLAGS_KERNEL +=   -DOPPO_P90M_SDCARD_FLAG
@@ -533,13 +534,13 @@ KBUILD_CFLAGS += -DCONFIG_OPPO_SPECIAL_BUILD
 endif
 #endif /* VENDOR_EDIT */
 #xing.xiong@BSP.Kernel.Driver, 2018/12/14, Add for recogonizing release build
-ifneq ($(filter release cts cta,$(OPPO_BUILD_TYPE)),)
+ifeq ($(filter release cts cta,$(OPPO_BUILD_TYPE)),)
 KBUILD_CFLAGS += -DOPPO_RELEASE_FLAG
 KBUILD_CPPFLAGS += -DOPPO_RELEASE_FLAG
 KBUILD_CFLAGS += -DCONFIG_OPPO_REALEASE_BUILD
 KBUILD_CPPFLAGS += -DCONFIG_OPPO_REALEASE_BUILD
 endif
-ifneq ($(filter cmcctest cmccfield allnetcttest,$(NET_BUILD_TYPE)),)
+ifeq ($(filter cmcctest cmccfield allnetcttest,$(NET_BUILD_TYPE)),)
 KBUILD_CFLAGS += -DOPPO_RELEASE_FLAG
 KBUILD_CPPFLAGS += -DOPPO_RELEASE_FLAG
 endif
@@ -582,6 +583,7 @@ export KBUILD_AFLAGS AFLAGS_KERNEL AFLAGS_MODULE
 export KBUILD_AFLAGS_MODULE KBUILD_CFLAGS_MODULE KBUILD_LDFLAGS_MODULE
 export KBUILD_AFLAGS_KERNEL KBUILD_CFLAGS_KERNEL
 export KBUILD_ARFLAGS
+export TARGET_BUILD_VARIANT
 
 # When compiling out-of-tree modules, put MODVERDIR in the module
 # tree rather than in the kernel tree. The kernel tree might
