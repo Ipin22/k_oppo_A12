@@ -32,8 +32,14 @@ struct fp_plat_t {
     struct pinctrl_state *pins_irq_rst_h, *pins_irq_rst_l;
     struct pinctrl_state *spi_default;
 #ifdef BSP_SIL_POWER_SUPPLY_PINCTRL
-    struct pinctrl_state *pins_avdd_h, *pins_vddio_h;
+	//struct pinctrl_state *pins_avdd_h, *pins_vddio_h;
+    struct pinctrl_state *pins_power_h, *pins_power_l;
 #endif /* BSP_SIL_POWER_SUPPLY_PINCTRL */
+#ifdef FINGER_CS_CONCTROL
+    int power_vdd_en;
+    struct pinctrl_state * finger_cs_gpio;   
+    struct pinctrl_state * finger_cs_func;  
+#endif
 #endif
 };
 

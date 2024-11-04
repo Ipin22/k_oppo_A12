@@ -39,7 +39,7 @@
 #include <linux/of_irq.h>
 //#include <linux/irq.h>
 
-#define DEBUG
+//#define DEBUG
 #include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0))
@@ -48,7 +48,8 @@
 #include <linux/pm_wakeup.h>
 #endif
 #include <linux/spi/spi.h>
-#include "../include/oppo_fp_common.h"
+//#include "../include/oppo_fp_common.h"
+#include <soc/oppo/oppo_project.h>
 
 #define FPC_IRQ_DEV_NAME    "fpc_irq"
 
@@ -75,6 +76,8 @@
 #define   FPC_WL_WAKELOCK_TIMEOUT                          0
 #endif
 
+#define FINGER_CS_CONCTROL
+
 #define   WAKELOCK_DISABLE                                  0
 #define   WAKELOCK_ENABLE                                   1
 #define   WAKELOCK_TIMEOUT_ENABLE                           2
@@ -96,6 +99,8 @@ struct mtk_spi {
 
 struct clk *globle_spi_clk;
 struct mtk_spi *fpc_ms;
+extern int g_is_fingerprint;
+static int onoff_cnt=1;
 
 typedef struct {
         struct spi_device                                   *spi;
@@ -114,28 +119,20 @@ struct vreg_config {
         int ua_load;
 };
 
-#if CONFIG_OPPO_FINGERPRINT_PROJCT == 18151
-static const struct vreg_config const vreg_conf[] = {
-        { "vdd_io", 3000000UL, 3000000UL, 6000, },
-};
-#else
-static const struct vreg_config const vreg_conf[] = {
-        { "vdd_io", 1800000UL, 1800000UL, 6000, },
-};
-#endif
-
 struct fpc1020_data {
         struct device *dev;
         struct platform_device *pldev;
         int irq_gpio;
         int rst_gpio;
-#if CONFIG_OPPO_FINGERPRINT_PROJCT == 18531 || CONFIG_OPPO_FINGERPRINT_PROJCT == 18161
-    int vdd_en_gpio;
-    int cs_gpio;
-    bool cs_gpio_set;
-    struct pinctrl *pinctrl;
-    struct pinctrl_state *pstate_cs_func;
-#endif
+#ifdef VENDOR_EDIT
+        /* Long.Liu@PSW.BSP.Fingerprint.Basic, 2019/9/18, Add for FPC driver baseon trustonic tee */
+        int vdd_en_gpio;
+        int cs_gpio;
+        bool cs_gpio_set;
+        struct pinctrl *pinctrl;
+        struct pinctrl_state *pstate_cs_func;
+        struct pinctrl_state *pstate_cs_gpio;
+#endif /* VENDOR_EDIT */
         struct input_dev *idev;
         int irq_num;
         struct mutex lock;
@@ -154,7 +151,12 @@ struct fpc1020_data {
         struct wakeup_source                                fpc_wl;
         struct wakeup_source                                fpc_irq_wl;
 #endif
-        struct regulator                                *vreg[ARRAY_SIZE(vreg_conf)];
+#ifdef VENDOR_EDIT
+        /* Long.Liu@PSW.BSP.Fingerprint.Basic, 2019/9/18, Add for FPC driver */
+        //struct regulator                                *vreg[ARRAY_SIZE(vreg_conf)];
+        //unsigned power_num;
+        //fp_power_info_t pwr_list[FP_MAX_PWR_LIST_LEN];
+#endif /* VENDOR_EDIT */
 };
 
 static int fpc1020_request_named_gpio(struct fpc1020_data *fpc1020,
@@ -179,69 +181,205 @@ static int fpc1020_request_named_gpio(struct fpc1020_data *fpc1020,
         return 0;
 }
 
-static int vreg_setup(struct fpc1020_data *fpc1020, const char *name,
-                bool enable)
+
+#ifdef VENDOR_EDIT
+/* Long.Liu@PSW.BSP.Fingerprint.Basic, 2019/9/18, Add for FPC driver */
+#if 0 //gjx
+static int vreg_setup(struct fpc1020_data *fpc_fp, fp_power_info_t *pwr_info,
+        bool enable)
 {
-        size_t i;
-        int rc;
-        struct regulator *vreg;
-        struct device *dev = fpc1020->dev;
+    int rc;
+    struct regulator *vreg;
+    struct device *dev = fpc_fp->dev;
+    char *name = NULL;
 
-        for (i = 0; i < ARRAY_SIZE(fpc1020->vreg); i++) {
-                const char *n = vreg_conf[i].name;
-                if (!strncmp(n, name, strlen(n))) {
-                        goto found;
-                }
-        }
-        dev_err(dev, "Regulator %s not found\n", name);
+    if (NULL == pwr_info) {
+        pr_err("pwr_info is NULL\n");
         return -EINVAL;
+    }
+    name = (char *)pwr_info->vreg_config.name;
+    if (NULL == name) {
+        pr_err("name is NULL\n");
+        return -EINVAL;
+    }
+    pr_err("Regulator %s vreg_setup,enable=%d \n", name, enable);
 
-found:
-        vreg = fpc1020->vreg[i];
-        if (enable) {
-                if (!vreg) {
-                        vreg = regulator_get(dev, name);
-                        if (IS_ERR(vreg)) {
-                                dev_err(dev, "Unable to get  %s\n", name);
-                                return PTR_ERR(vreg);
-                        }
-                }
-                if (regulator_count_voltages(vreg) > 0) {
-                        rc = regulator_set_voltage(vreg, vreg_conf[i].vmin,
-                                        vreg_conf[i].vmax);
-                        if (rc) {
-                                dev_err(dev,
-                                                "Unable to set voltage on %s, %d\n",
-                                                name, rc);
-                        }
-                }
-
-                rc = regulator_set_load(vreg, vreg_conf[i].ua_load);
-
-                if (rc < 0) {
-                        dev_err(dev, "Unable to set current on %s, %d\n",
-                                        name, rc);
-                }
-                rc = regulator_enable(vreg);
-                if (rc) {
-                        dev_err(dev, "error enabling %s: %d\n", name, rc);
-                        regulator_put(vreg);
-                        vreg = NULL;
-                }
-                fpc1020->vreg[i] = vreg;
-        } else {
-                if (vreg) {
-                        if (regulator_is_enabled(vreg)) {
-                                regulator_disable(vreg);
-                                dev_dbg(dev, "disabled %s\n", name);
-                        }
-                        regulator_put(vreg);
-                        fpc1020->vreg[i] = NULL;
-                }
-                rc = 0;
+    vreg = pwr_info->vreg;
+    if (enable) {
+        if (!vreg) {
+            vreg = regulator_get(dev, name);
+            if (IS_ERR(vreg)) {
+                pr_err("Unable to get  %s\n", name);
+                return PTR_ERR(vreg);
+            }
         }
-        return rc;
+        if (regulator_count_voltages(vreg) > 0) {
+            rc = regulator_set_voltage(vreg, pwr_info->vreg_config.vmin,
+                    pwr_info->vreg_config.vmax);
+            if (rc) {
+                pr_err("Unable to set voltage on %s, %d\n", name, rc);
+            }
+        }
+        rc = regulator_set_load(vreg, pwr_info->vreg_config.ua_load);
+        if (rc < 0) {
+            pr_err("Unable to set current on %s, %d\n", name, rc);
+        }
+        rc = regulator_enable(vreg);
+        if (rc) {
+            pr_err("error enabling %s: %d\n", name, rc);
+            regulator_put(vreg);
+            vreg = NULL;
+        }
+        pwr_info->vreg = vreg;
+    } else {
+        if (vreg) {
+            if (regulator_is_enabled(vreg)) {
+                regulator_disable(vreg);
+                pr_err("disabled %s\n", name);
+            }
+            regulator_put(vreg);
+            pwr_info->vreg = NULL;
+        }
+        pr_err("disable vreg is null \n");
+        rc = 0;
+    }
+    return rc;
 }
+#endif //gjx
+
+/*power on auto during boot, no need fp driver power on*/
+int fpc_power_on(struct fpc1020_data* fpc_dev)
+{
+   int rc = 0; 
+
+  if(onoff_cnt)
+  {  
+    dev_err(fpc_dev->dev," ===enter=== %s \n",__func__);
+	
+#ifdef FINGER_CS_CONCTROL	
+	pinctrl_select_state(fpc_dev->pinctrl, fpc_dev->pstate_cs_func);
+#endif	
+
+    rc = gpio_direction_output(fpc_dev->vdd_en_gpio, 0);
+
+    if (rc) {
+		dev_err(fpc_dev->dev,
+				"gpio_direction_output (vdd_en_gpio) failed.\n");
+		
+    	}
+
+     mdelay(2);
+     gpio_direction_output(fpc_dev->rst_gpio, 1);
+     udelay(FPC1020_RESET_HIGH2_US);
+
+	 onoff_cnt=0;
+
+   }
+#if 0//gjx
+
+    unsigned index = 0;
+
+    for (index = 0; index < fpc_dev->power_num; index++) {
+        switch (fpc_dev->pwr_list[index].pwr_type) {
+        case FP_POWER_MODE_LDO:
+            rc = vreg_setup(fpc_dev, &(fpc_dev->pwr_list[index]), true);
+            pr_info("---- power on ldo ----\n");
+            break;
+        case FP_POWER_MODE_GPIO:
+            gpio_set_value(fpc_dev->pwr_list[index].pwr_gpio, 1);
+            pr_info("set pwr_gpio 1\n");
+            break;
+        case FP_POWER_MODE_AUTO:
+            pr_info("[%s] power on auto, no need power on again\n", __func__);
+            break;
+        case FP_POWER_MODE_NOT_SET:
+        default:
+            rc = -1;
+            pr_info("---- power on mode not set !!! ----\n");
+            break;
+        }
+        if (rc) {
+            pr_err("---- power on failed with mode = %d, index = %d, rc = %d ----\n",
+                    fpc_dev->pwr_list[index].pwr_type, index, rc);
+            break;
+        } else {
+            pr_info("---- power on ok with mode = %d, index = %d  ----\n",
+                    fpc_dev->pwr_list[index].pwr_type, index);
+        }
+        msleep(fpc_dev->pwr_list[index].delay);
+    }
+#endif
+ //   msleep(30);
+    return rc;
+}
+
+/*power off auto during shut down, no need fp driver power off*/
+int fpc_power_off(struct fpc1020_data* fpc_dev)
+{
+    int rc = 0;
+
+    dev_err(fpc_dev->dev," ++ %s \n",__func__);
+   if( !onoff_cnt)
+   {
+
+      dev_err(fpc_dev->dev," ==+exit+ %s \n",__func__);
+	  
+#ifdef FINGER_CS_CONCTROL	
+      pinctrl_select_state(fpc_dev->pinctrl, fpc_dev->pstate_cs_gpio);
+#endif   
+      rc = gpio_direction_output(fpc_dev->vdd_en_gpio, 1);
+
+      if (rc) {
+		dev_err(fpc_dev->dev,
+				"gpio_direction_output (vdd_en_gpio) failed.\n");
+	
+      }
+
+	  mdelay(1);
+      gpio_direction_output(fpc_dev->rst_gpio,0);
+	  
+      onoff_cnt =1;
+	  
+    }
+#if 0 //gjx
+
+    unsigned index = 0;
+
+    for (index = 0; index < fpc_dev->power_num; index++) {
+        switch (fpc_dev->pwr_list[index].pwr_type) {
+        case FP_POWER_MODE_LDO:
+            rc = vreg_setup(fpc_dev, &(fpc_dev->pwr_list[index]), false);
+            pr_info("---- power on ldo ----\n");
+            break;
+        case FP_POWER_MODE_GPIO:
+            gpio_set_value(fpc_dev->pwr_list[index].pwr_gpio, 0);
+            pr_info("set pwr_gpio 1\n");
+            break;
+        case FP_POWER_MODE_AUTO:
+            pr_info("[%s] power on auto, no need power on again\n", __func__);
+            break;
+        case FP_POWER_MODE_NOT_SET:
+        default:
+            rc = -1;
+            pr_info("---- power on mode not set !!! ----\n");
+            break;
+        }
+        if (rc) {
+            pr_err("---- power off failed with mode = %d, index = %d, rc = %d ----\n",
+                    fpc_dev->pwr_list[index].pwr_type, index, rc);
+            break;
+        } else {
+            pr_info("---- power off ok with mode = %d, index = %d  ----\n",
+                    fpc_dev->pwr_list[index].pwr_type, index);
+        }
+    }
+#endif //gjx
+    //msleep(30);
+    return rc;
+}
+
+#endif /* VENDOR_EDIT */
+
 
 /* -------------------------------------------------------------------------- */
 /**
@@ -364,15 +502,18 @@ static ssize_t regulator_enable_set(struct device *dev,
         if (1 == sscanf(buffer, "%d", &op)) {
                 if (op == 1) {
                         enable = true;
+                        fpc_power_on(fpc1020);
                 }
                 else if (op == 0) {
                         enable = false;
+                        fpc_power_off(fpc1020);
                 }
         } else {
                 printk("invalid content: '%s', length = %zd\n", buffer, count);
                 return -EINVAL;
         }
-        rc = vreg_setup(fpc1020, "vdd_io", enable);
+
+        //rc = vreg_setup(fpc1020, "vdd_io", enable);
         return rc ? rc : count;
 }
 
@@ -452,23 +593,28 @@ static ssize_t wakelock_enable_set(struct device *dev,
         return count;
 }
 
-#if CONFIG_OPPO_FINGERPRINT_PROJCT == 18531 || CONFIG_OPPO_FINGERPRINT_PROJCT == 18161
+#ifdef VENDOR_EDIT
+/* Long.Liu@PSW.BSP.Fingerprint.Basic, 2019/9/18, Add for FPC driver */
 static ssize_t hardware_reset(struct device *dev, struct device_attribute *attribute, const char *buffer, size_t count)
 {
-    struct  fpc1020_data *fpc1020 = dev_get_drvdata(dev);
-    printk("fpc_interrupt: %s enter\n", __func__);
-    gpio_direction_output(fpc1020->vdd_en_gpio, 0);
-    gpio_set_value(fpc1020->rst_gpio, 0);
-    udelay(FPC1020_RESET_LOW_US);
-    gpio_set_value(fpc1020->rst_gpio, 1);
-    gpio_direction_output(fpc1020->vdd_en_gpio, 1);
-    printk("fpc_interrupt: %s exit\n", __func__);
+        /* Liang.Liu@PSW.BSP.Fingerprint.Basic, 2020/5/08, add for project 20001 */
+        /*if (get_project() == 18531 || get_project() == 18161 || get_project() == 19131
+		|| get_project() == 19132 || get_project() == 19133 || get_project() == 20001)  {*/
+            struct  fpc1020_data *fpc1020 = dev_get_drvdata(dev);
+            printk("fpc_interrupt: %s enter\n", __func__);
+            gpio_direction_output(fpc1020->vdd_en_gpio, 0);
+            gpio_set_value(fpc1020->rst_gpio, 0);
+            udelay(FPC1020_RESET_LOW_US);
+            gpio_set_value(fpc1020->rst_gpio, 1);
+            gpio_direction_output(fpc1020->vdd_en_gpio, 1);
+            printk("fpc_interrupt: %s exit\n", __func__);
+        //}
+
     return count;
 }
 
 static DEVICE_ATTR(irq_unexpected, S_IWUSR, NULL, hardware_reset);
-#endif
-
+#endif /* VENDOR_EDIT */
 static DEVICE_ATTR(irq, S_IRUSR | S_IWUSR, irq_get, irq_ack);
 static DEVICE_ATTR(regulator_enable, S_IWUSR, NULL, regulator_enable_set);
 static DEVICE_ATTR(irq_enable, S_IRUSR | S_IWUSR, irq_enable_get, irq_enable_set);
@@ -484,9 +630,10 @@ static struct attribute *attributes[] = {
         &dev_attr_irq_enable.attr,
         &dev_attr_wakelock_enable.attr,
         &dev_attr_clk_enable.attr,
-#if CONFIG_OPPO_FINGERPRINT_PROJCT == 18531 || CONFIG_OPPO_FINGERPRINT_PROJCT == 18161
+        #ifdef VENDOR_EDIT
+        /* Long.Liu@PSW.BSP.Fingerprint.Basic, 2019/9/18, Add for FPC driver */
         &dev_attr_irq_unexpected.attr,
-#endif
+        #endif /* VENDOR_EDIT */
         NULL
 };
 
@@ -519,6 +666,156 @@ static irqreturn_t fpc1020_irq_handler(int irq, void *handle)
         return IRQ_HANDLED;
 }
 
+
+#ifdef VENDOR_EDIT
+/* Long.Liu@PSW.BSP.Fingerprint.Basic, 2019/9/18, Add for FPC driver */
+#if 0 //gjx
+void fpc_cleanup_pwr_list(struct fpc1020_data* fpc_dev) {
+    unsigned index = 0;
+    pr_err("%s cleanup", __func__);
+    for (index = 0; index < fpc_dev->power_num; index++) {
+        if (fpc_dev->pwr_list[index].pwr_type == FP_POWER_MODE_GPIO) {
+            gpio_free(fpc_dev->rst_gpio);
+        }
+        memset(&(fpc_dev->pwr_list[index]), 0, sizeof(fp_power_info_t));
+    }
+}
+
+int fpc_parse_pwr_list(struct fpc1020_data* fpc_dev) {
+    int ret = 0;
+    struct device *dev = fpc_dev->dev;
+    struct device_node *np = dev->of_node;
+    struct device_node *child = NULL;
+    unsigned child_node_index = 0;
+    int ldo_param_amount = 0;
+    const char *node_name = NULL;
+    fp_power_info_t *pwr_list = fpc_dev->pwr_list;
+    /* pwr list init */
+    fpc_cleanup_pwr_list(fpc_dev);
+
+    /* parse each node */
+    for_each_available_child_of_node(np, child) {
+        if (child_node_index >= FP_MAX_PWR_LIST_LEN) {
+            pr_err("too many nodes");
+            ret = -FP_ERROR_GENERAL;
+            goto exit;
+        }
+
+        /* get type of this power */
+        ret = of_property_read_u32(child, FP_POWER_NODE, &(pwr_list[child_node_index].pwr_type));
+        if (ret) {
+            pr_err("failed to request %s, ret = %d\n", FP_POWER_NODE, ret);
+            goto exit;
+        }
+
+        pr_info("read power type of index %d, type : %u\n", child_node_index, pwr_list[child_node_index].pwr_type);
+
+        switch(pwr_list[child_node_index].pwr_type) {
+        case FP_POWER_MODE_LDO:
+            /* read ldo supply name */
+            ret = of_property_read_string(child, FP_POWER_NAME_NODE, &(pwr_list[child_node_index].vreg_config.name));
+            if (ret) {
+                pr_err("the param %s is not found !\n", FP_POWER_NAME_NODE);
+                ret = -FP_ERROR_GENERAL;
+                goto exit;
+            }
+            pr_debug("get ldo node name %s", pwr_list[child_node_index].vreg_config.name);
+
+            /* read ldo config name */
+            ret = of_property_read_string(child, FP_POWER_CONFIG, &node_name);
+            if (ret) {
+                pr_err("the param %s is not found !\n", FP_POWER_CONFIG);
+                ret = -FP_ERROR_GENERAL;
+                goto exit;
+            }
+            pr_debug("get config node name %s", node_name);
+
+            ldo_param_amount = of_property_count_elems_of_size(np, node_name, sizeof(u32));
+            pr_debug("get ldo_param_amount %d", ldo_param_amount);
+            if(ldo_param_amount != LDO_PARAM_AMOUNT) {
+                pr_err("failed to request size %s\n", node_name);
+                ret = -FP_ERROR_GENERAL;
+                goto exit;
+            }
+
+            ret = of_property_read_u32_index(np, node_name, LDO_VMAX_INDEX, &(pwr_list[child_node_index].vreg_config.vmax));
+            if (ret) {
+                pr_err("failed to request %s(%d), rc = %u\n", node_name, LDO_VMAX_INDEX, ret);
+                goto exit;
+            }
+
+            ret = of_property_read_u32_index(np, node_name, LDO_VMIN_INDEX, &(pwr_list[child_node_index].vreg_config.vmin));
+            if (ret) {
+                pr_err("failed to request %s(%d), rc = %u\n", node_name, LDO_VMIN_INDEX, ret);
+                goto exit;
+            }
+
+            ret = of_property_read_u32_index(np, node_name, LDO_UA_INDEX, &(pwr_list[child_node_index].vreg_config.ua_load));
+            if (ret) {
+                pr_err("failed to request %s(%d), rc = %u\n", node_name, LDO_UA_INDEX, ret);
+                goto exit;
+            }
+
+            pr_info("%s size = %d, ua=%d, vmax=%d, vmin=%d\n", node_name, ldo_param_amount,
+                    pwr_list[child_node_index].vreg_config.ua_load,
+                    pwr_list[child_node_index].vreg_config.vmax,
+                    pwr_list[child_node_index].vreg_config.vmax);
+            break;
+        case FP_POWER_MODE_GPIO:
+            /* read GPIO name */
+            ret = of_property_read_string(child, FP_POWER_NAME_NODE, &node_name);
+            if (ret) {
+                pr_err("the param %s is not found !\n", FP_POWER_NAME_NODE);
+                ret = -FP_ERROR_GENERAL;
+                goto exit;
+            }
+            pr_info("get config node name %s", node_name);
+
+            /* get gpio by name */
+            pwr_list[child_node_index].pwr_gpio = of_get_named_gpio(np, node_name, 0);
+            pr_debug("end of_get_named_gpio %s, pwr_gpio: %d!\n", node_name, pwr_list[child_node_index].pwr_gpio);
+            if (pwr_list[child_node_index].pwr_gpio < 0) {
+                pr_err("falied to get goodix_pwr gpio!\n");
+                ret = -FP_ERROR_GENERAL;
+                goto exit;
+            }
+
+            ret = devm_gpio_request(dev, pwr_list[child_node_index].pwr_gpio, node_name);
+            if (ret) {
+                pr_err("failed to request %s gpio, ret = %d\n", node_name, ret);
+                goto exit;
+            }
+            gpio_direction_output(pwr_list[child_node_index].pwr_gpio, 0);
+            pr_err("set goodix_pwr %u output 0 \n", child_node_index);
+            break;
+
+        case FP_POWER_MODE_AUTO:
+            pr_info("%s power mode auto \n", __func__);
+            break;
+        default:
+            pr_err("unknown type %u\n", pwr_list[child_node_index].pwr_type);
+            ret = -FP_ERROR_GENERAL;
+            goto exit;
+        }
+
+        /* get delay time of this power */
+        ret = of_property_read_u32(child, FP_POWER_DELAY_TIME, &pwr_list[child_node_index].delay);
+        if (ret) {
+            pr_err("failed to request %s, ret = %d\n", FP_POWER_NODE, ret);
+            goto exit;
+        }
+        child_node_index++;
+    }
+    fpc_dev->power_num = child_node_index;
+exit:
+    if (ret) {
+        fpc_cleanup_pwr_list(fpc_dev);
+    }
+    return ret;
+}
+#endif //gjx
+#endif /* VENDOR_EDIT */
+
 static int fpc1020_irq_probe(struct platform_device *pldev)
 {
         struct device *dev = &pldev->dev;
@@ -534,11 +831,13 @@ static int fpc1020_irq_probe(struct platform_device *pldev)
                 goto ERR_ALLOC;
         }
 
-#if CONFIG_OPPO_FINGERPRINT_PROJCT == 18531 || CONFIG_OPPO_FINGERPRINT_PROJCT == 18161
+        #ifdef VENDOR_EDIT
+        /* Long.Liu@PSW.BSP.Fingerprint.Basic, 2019/9/18, Add for FPC driver */
         fpc1020->cs_gpio_set = false;
         fpc1020->pinctrl = NULL;
         fpc1020->pstate_cs_func = NULL;
-#endif
+        fpc1020->pstate_cs_gpio = NULL;
+        #endif /* VENDOR_EDIT */
         fpc1020->dev = dev;
         dev_info(fpc1020->dev, "-->%s\n", __func__);
         dev_set_drvdata(dev, fpc1020);
@@ -549,31 +848,38 @@ static int fpc1020_irq_probe(struct platform_device *pldev)
                 rc = -EINVAL;
                 goto ERR_BEFORE_WAKELOCK;
         }
-
+#if 0 //gjx
         if ((FP_FPC_1140 != get_fpsensor_type())
                         &&(FP_FPC_1260 != get_fpsensor_type())
                         &&(FP_FPC_1022 != get_fpsensor_type())
                         &&(FP_FPC_1023 != get_fpsensor_type())
                         &&(FP_FPC_1023_GLASS != get_fpsensor_type())
                         &&(FP_FPC_1270 != get_fpsensor_type())
-                        &&(FP_FPC_1511 != get_fpsensor_type())) {
+                        &&(FP_FPC_1511 != get_fpsensor_type())
+                        &&(FP_FPC_1541 != get_fpsensor_type())) {
                 dev_err(dev, "found not fpc sensor\n");
                 rc = -EINVAL;
                 goto ERR_BEFORE_WAKELOCK;
         }
         dev_info(dev, "found fpc sensor\n");
-#if CONFIG_OPPO_FINGERPRINT_PROJCT == 18531 || CONFIG_OPPO_FINGERPRINT_PROJCT == 18161
-        fpc1020->pinctrl = devm_pinctrl_get(&pldev->dev);
-        if (IS_ERR(fpc1020->pinctrl)) {
+#endif
+        #ifdef VENDOR_EDIT
+        /* Long.Liu@PSW.BSP.Fingerprint.Basic, 2019/9/18, Add for FPC driver */
+        /* Liang.Liu@PSW.BSP.Fingerprint.Basic, 2020/5/08, add for project 20001 */
+        if (get_project() == 18531 || get_project() == 18161 || get_project() == 19131
+		 || get_project() == 19132 || get_project() == 19133 ||  get_project() == 20001) {
+            fpc1020->pinctrl = devm_pinctrl_get(&pldev->dev);
+            if (IS_ERR(fpc1020->pinctrl)) {
                 dev_err(&pldev->dev, "can not get the fpc pinctrl");
                 return PTR_ERR(fpc1020->pinctrl);
-        }
-        fpc1020->pstate_cs_func = pinctrl_lookup_state(fpc1020->pinctrl, "fpc_cs_func");
-        if (IS_ERR(fpc1020->pstate_cs_func)) {
+            }
+            fpc1020->pstate_cs_func = pinctrl_lookup_state(fpc1020->pinctrl, "fpc_cs_func");
+            if (IS_ERR(fpc1020->pstate_cs_func)) {
                 dev_err(&pldev->dev, "Can't find fpc_cs_func pinctrl state\n");
                 return PTR_ERR(fpc1020->pstate_cs_func);
+            }
         }
-#endif
+        #endif /* VENDOR_EDIT */
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0))
         wake_lock_init(&fpc1020->ttw_wl, WAKE_LOCK_SUSPEND, "fpc_ttw_wl");
@@ -597,12 +903,22 @@ static int fpc1020_irq_probe(struct platform_device *pldev)
                 "gpio_direction_input failed for INT.\n");
                 goto ERR_AFTER_WAKELOCK;
         }
+		
 
         rc = fpc1020_request_named_gpio(fpc1020, "fpc,reset-gpio",
                 &fpc1020->rst_gpio);
         if (rc) {
                 goto ERR_AFTER_WAKELOCK;
         }
+		
+
+        rc = fpc1020_request_named_gpio(fpc1020, "fpc,vdd-en",
+                &fpc1020->vdd_en_gpio);
+        if (rc) {
+                goto ERR_AFTER_WAKELOCK;
+        }
+		
+        
         /*dev_info(fpc1020->dev, "fpc1020 requested gpio finished \n");*/
 
         irqf = IRQF_TRIGGER_RISING | IRQF_ONESHOT;
@@ -632,65 +948,78 @@ static int fpc1020_irq_probe(struct platform_device *pldev)
                 goto ERR_AFTER_WAKELOCK;
         }
 
-#if CONFIG_OPPO_FINGERPRINT_PROJCT == 18531 || CONFIG_OPPO_FINGERPRINT_PROJCT == 18161
+       
+		
+        #ifdef VENDOR_EDIT
+        /* Long.Liu@PSW.BSP.Fingerprint.Basic, 2019/9/18, Add for FPC driver */
+        /* Liang.Liu@PSW.BSP.Fingerprint.Basic, 2020/5/08, add for project 20001 */
+       if (get_project() == 18531 || get_project() == 18161 || get_project() == 19131 
+		|| get_project() == 19132 || get_project() == 19133 ||  get_project() == 20001) {
         /*get cs resource*/
         fpc1020->cs_gpio = of_get_named_gpio(pldev->dev.of_node, "fpc,gpio_cs", 0);
         if (!gpio_is_valid(fpc1020->cs_gpio)) {
-                pr_info("CS GPIO is invalid.\n");
-                return -1;
+            pr_info("CS GPIO is invalid.\n");
+            return -1;
         }
         rc = gpio_request(fpc1020->cs_gpio, "fpc,gpio_cs");
         if (rc) {
-                dev_err(fpc1020->dev, "Failed to request CS GPIO. rc = %d\n", rc);
-                return -1;
+            dev_err(fpc1020->dev, "Failed to request CS GPIO. rc = %d\n", rc);
+            return -1;
         }
         gpio_direction_output(fpc1020->cs_gpio, 0);
         fpc1020->cs_gpio_set = true;
 
         if (fpc1020->cs_gpio_set) {
-                pr_info("---- pull CS up and set CS from gpio to func ----");
-                gpio_set_value(fpc1020->cs_gpio, 1);
-                pinctrl_select_state(fpc1020->pinctrl, fpc1020->pstate_cs_func);
-                fpc1020->cs_gpio_set = false;
+            pr_info("---- pull CS up and set CS from gpio to func ----");
+            gpio_set_value(fpc1020->cs_gpio, 1);
+            pinctrl_select_state(fpc1020->pinctrl, fpc1020->pstate_cs_func);
+            fpc1020->cs_gpio_set = false;
+        }
+       }
+       #endif /* VENDOR_EDIT */
+
+#ifdef FINGER_CS_CONCTROL
+       fpc1020->pinctrl = devm_pinctrl_get(&pldev->dev);
+            if (IS_ERR(fpc1020->pinctrl)) {
+                dev_err(&pldev->dev, "can not get the fpc pinctrl");
+                return PTR_ERR(fpc1020->pinctrl);
+            }
+       fpc1020->pstate_cs_gpio = pinctrl_lookup_state(fpc1020->pinctrl, "fpc_cs_gpio");
+            if (IS_ERR(fpc1020->pstate_cs_gpio)) {
+                dev_err(&pldev->dev, "Can't find fpc_cs_gpio pinctrl state\n");
+                return PTR_ERR(fpc1020->pstate_cs_gpio);
+            }
+	   fpc1020->pstate_cs_func = pinctrl_lookup_state(fpc1020->pinctrl, "fpc_cs_func");
+		    if (IS_ERR(fpc1020->pstate_cs_func)) {
+					 dev_err(&pldev->dev, "Can't find fpc_cs_func pinctrl state\n");
+					 return PTR_ERR(fpc1020->pstate_cs_func);
+				 }
+
+#endif
+        #ifdef VENDOR_EDIT
+        /* Long.Liu@PSW.BSP.Fingerprint.Basic, 2019/9/18, Add for FPC driver */
+#if 0 //gjx
+        rc = fpc_parse_pwr_list(fpc1020);
+        if (rc) {
+            pr_err("failed to parse power list, rc = %d\n", rc);
+            goto ERR_AFTER_WAKELOCK;
         }
 #endif
-
-        rc = gpio_direction_output(fpc1020->rst_gpio, 1);
-
-        if (rc) {
-                dev_err(fpc1020->dev,
-                        "gpio_direction_output (reset) failed.\n");
-                goto ERR_AFTER_WAKELOCK;
+        /* Liang.Liu@PSW.BSP.Fingerprint.Basic, 2020/5/08, add for project 20001 */
+        if (get_project() != 18531 && get_project() != 18161 && get_project() != 19131
+		&& get_project() != 19132 && get_project() != 19133 && get_project() != 20001) {
+           //fpc_power_on(fpc1020);
         }
+        #endif /* VENDOR_EDIT */
 
-#if CONFIG_OPPO_FINGERPRINT_PROJCT == 18531 || CONFIG_OPPO_FINGERPRINT_PROJCT == 18161
-        /*get ldo resource*/
-/*
-        rc = fpc1020_request_named_gpio(fpc1020, "fpc,vdd-en",
-                    &fpc1020->vdd_en_gpio);
-        if (rc) {
-                goto ERR_AFTER_WAKELOCK;
-        }
-        rc = gpio_direction_output(fpc1020->vdd_en_gpio, 1);
-        if (rc < 0) {
-                dev_err(fpc1020->dev, "gpio_direction_output (vdd_en) failed.\n");
-                goto ERR_AFTER_WAKELOCK;
-        }
-*/
-#else
-        rc = vreg_setup(fpc1020, "vdd_io", true);
-
-        if (rc) {
-                dev_err(fpc1020->dev,
-                                "vreg_setup failed.\n");
-                goto ERR_AFTER_WAKELOCK;
-        }
-#endif
-        mdelay(2);
-        gpio_set_value(fpc1020->rst_gpio, 1);
-        udelay(FPC1020_RESET_HIGH2_US);
-
+        //mdelay(2);
+        //gpio_set_value(fpc1020->rst_gpio, 1);
+        //udelay(FPC1020_RESET_HIGH2_US);
+        
+        gpio_direction_output(fpc1020->vdd_en_gpio, 1);//disable-vdd
+		
         dev_info(fpc1020->dev, "%s: ok\n", __func__);
+		
         return 0;
 
 ERR_AFTER_WAKELOCK:
@@ -766,6 +1095,7 @@ MODULE_DEVICE_TABLE(of, fpc1020_of_match);
 static struct of_device_id fpc1020_spi_of_match[] = {
         { .compatible = "fpc,fpc1020", },
         { .compatible = "oppo,oppo_fp" },
+		{ .compatible = "mediatek,fingerspi-fp" },
         {}
 };
 
@@ -809,18 +1139,20 @@ static struct spi_board_info fpc1020_spi_board_devs[] __initdata = {
 static int __init fpc1020_init(void)
 {
         //int rc = 0;
+#if 0 //gjx
         if ((FP_FPC_1140 != get_fpsensor_type())
                         &&(FP_FPC_1260 != get_fpsensor_type())
                         &&(FP_FPC_1022 != get_fpsensor_type())
                         &&(FP_FPC_1023 != get_fpsensor_type())
                         &&(FP_FPC_1023_GLASS != get_fpsensor_type())
                         &&(FP_FPC_1270 != get_fpsensor_type())
-                        &&(FP_FPC_1511 != get_fpsensor_type())) {
-                pr_err("fpc1020_init, found not fpc sensor\n");
-pr_err("%s, found not fpc sensor: %d\n", __func__, get_fpsensor_type());
+                        &&(FP_FPC_1511 != get_fpsensor_type())
+			&&(FP_FPC_1541 != get_fpsensor_type())) {
+                pr_err("%s, found not fpc sensor: %d\n", __func__, get_fpsensor_type());
                 return -EINVAL;
         }
         pr_err("%s, found fpc sensor: %d\n", __func__, get_fpsensor_type());
+#endif //gjx
         #if 0
         rc = spi_register_board_info(fpc1020_spi_board_devs, ARRAY_SIZE(fpc1020_spi_board_devs));
         if (rc)
@@ -829,6 +1161,15 @@ pr_err("%s, found not fpc sensor: %d\n", __func__, get_fpsensor_type());
                 return -EINVAL;
         }
         #endif
+		
+		if(g_is_fingerprint == 1)
+		{
+			printk("%s, Need to register FPC FP driver\n", __func__);
+		}else{
+			printk("%s, Not Need to register FPC FP driver\n", __func__);
+			return -1;
+		}
+		
         if (spi_register_driver(&fpc1020_spi_driver))
         {
                 pr_err("register spi driver fail");
@@ -849,12 +1190,7 @@ static void __exit fpc1020_exit(void)
         //platform_device_unregister(fpc_irq_platform_device);
 }
 
-#if CONFIG_OPPO_FINGERPRINT_PROJCT == 18151
-late_initcall(fpc1020_init);
-#else
 module_init(fpc1020_init);
-#endif
-
 module_exit(fpc1020_exit);
 
 MODULE_LICENSE("GPL v2");
