@@ -25,10 +25,10 @@ static int board_id_proc_show(struct seq_file *file, void* data)
 		sprintf(temp, "%s", "et520");
 		seq_printf(file, "%s", temp);
 	}else if(strstr(saved_command_line,"fingerprint=silead")){
-		sprintf(temp, "%s", "gsl6150");
+		sprintf(temp, "%s", "silead");
 		seq_printf(file, "%s", temp);
 	}else{
-		sprintf(temp, "%s", "unknown");
+		sprintf(temp, "%s", "oppo_fp_common");
 		seq_printf(file, "%s", temp);
 	}
 //gjx@ODM_WT.BSP.FINGERPRINT 2019/12/19 add for bringup
