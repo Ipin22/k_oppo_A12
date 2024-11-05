@@ -132,7 +132,7 @@ fp_module_config_t fp_module_config_list[] = {
 fp_module_config_t fp_module_config_list[] = {
     {{1, -1, -1},  FP_UNKNOWN,    	CHIP_UNKNOWN,     ENGINEER_MENU_FPC1023},
     {{1, -1, -1},  FP_UNKNOWN,    	CHIP_UNKNOWN,     ENGINEER_MENU_FPC1023},
-
+};
 #endif
 
 static int fp_request_named_gpio(struct fp_data *fp_data,
@@ -458,4 +458,4 @@ static void __exit oppo_fp_common_exit(void)
 }
 
 subsys_initcall(oppo_fp_common_init);
-module_exit(oppo_fp_common_exit)
+module_exit(oppo_fp_common_exit);
