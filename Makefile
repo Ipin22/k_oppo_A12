@@ -410,7 +410,6 @@ KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
 GCC_PLUGINS_CFLAGS :=
 TARGET_BUILD_VARIANT := user
 TARGET_PRODUCT := full_oppo6765
-OPPO_19451 := 1
 
 #ifdef VENDOR_EDIT
 #Haiping.Zhong@PSW.AD.BuildConfig.BaseConfig.0, 2019/01/08, Add for build root disable dm verity
@@ -418,8 +417,6 @@ ifeq ($(OPPO_BUILD_ROOT_DISABLE_DM_VERITY),true)
     KBUILD_CFLAGS += -DOPPO_BUILD_ROOT_DISABLE_DM_VERITY
 endif
 #endif /* VENDOR_EDIT */
-
-
 
 #ifdef VENDOR_EDIT
 #Tong.Han@Bsp.Group.Stability, 2017/07/28, Add for aging test version config
@@ -470,11 +467,6 @@ ifeq ($(OPPO_KMEMLEAK_CONFIG),1)
 OPPO_KMEMLEAK_TEST := true
 OPPO_SLUB_TEST := true
 endif
-
-#Wen.Luo@Bsp.Kernel.Stability, 2018/12/05, Before agingtest enable slub debug except release
-#Wen.Luo@Bsp.Kernel.Stability, 2019/04/09, PVT default disable Slub debug
-#OPPO_SLUB_TEST := true
-
 
 ifeq ($(BUILD_CONFIG),release)
     ifneq ($(SPECIAL_OPPO_CONFIG),1)
@@ -586,7 +578,6 @@ export KBUILD_AFLAGS_KERNEL KBUILD_CFLAGS_KERNEL
 export KBUILD_ARFLAGS
 export TARGET_BUILD_VARIANT
 export TARGET_PRODUCT
-export OPPO_19451
 
 # When compiling out-of-tree modules, put MODVERDIR in the module
 # tree rather than in the kernel tree. The kernel tree might
