@@ -411,6 +411,7 @@ GCC_PLUGINS_CFLAGS :=
 TARGET_BUILD_VARIANT := user
 TARGET_PRODUCT := full_oppo6765
 OPPO_19451 := 1
+
 #ifdef VENDOR_EDIT
 #Haiping.Zhong@PSW.AD.BuildConfig.BaseConfig.0, 2019/01/08, Add for build root disable dm verity
 ifeq ($(OPPO_BUILD_ROOT_DISABLE_DM_VERITY),true)
@@ -443,7 +444,7 @@ endif
 #Bin.Yan@PSW.AD.BuildConfig.BaseConfig.1068615, 2017/08/28,Add for disallow system remount
 ifneq ($(SPECIAL_OPPO_CONFIG),1)
 ifneq ($(SPECIAL_OPPO_PERFORMANCE),1)
-    ifneq ($(filter release,$(OPPO_BUILD_TYPE)),user)
+    ifneq ($(filter release,$(OPPO_BUILD_TYPE)),)
         ifneq ($(OPPO_ALLOW_KEY_INTERFACES),true)
             ifeq ($(filter allnetcttest allnetcmcctest allnetcmccfield allnetctfield,$(NET_BUILD_TYPE)),)
                 KBUILD_CFLAGS += -DOPPO_DISALLOW_KEY_INTERFACES
@@ -475,8 +476,8 @@ endif
 #OPPO_SLUB_TEST := true
 
 
-ifneq ($(BUILD_CONFIG),release)
-    ifeq ($(SPECIAL_OPPO_CONFIG),1)
+ifeq ($(BUILD_CONFIG),release)
+    ifneq ($(SPECIAL_OPPO_CONFIG),1)
         OPPO_SLUB_TEST :=
         OPPO_KASAN_TEST :=
         OPPO_KMEMLEAK_TEST :=
@@ -512,7 +513,7 @@ CFLAGS_MODULE +=   -DVENDOR_EDIT
 
 #ifdef VENDOR_EDIT
 #runyu.ouyang@BSP.storage.sdcard, 2019/05/23, Add for sdcard
-ifeq ($(filter full_oppo6779_19011 full_oppo6779_19301, $(TARGET_PRODUCT)),)
+ifneq ($(filter full_oppo6779_19011 full_oppo6779_19301, $(TARGET_PRODUCT)),)
 KBUILD_CFLAGS += -DOPPO_P90M_SDCARD_FLAG
 KBUILD_CPPFLAGS += -DOPPO_P90M_SDCARD_FLAG
 CFLAGS_KERNEL +=   -DOPPO_P90M_SDCARD_FLAG
@@ -534,13 +535,13 @@ KBUILD_CFLAGS += -DCONFIG_OPPO_SPECIAL_BUILD
 endif
 #endif /* VENDOR_EDIT */
 #xing.xiong@BSP.Kernel.Driver, 2018/12/14, Add for recogonizing release build
-ifeq ($(filter release cts cta,$(OPPO_BUILD_TYPE)),)
+ifneq ($(filter release cts cta,$(OPPO_BUILD_TYPE)),)
 KBUILD_CFLAGS += -DOPPO_RELEASE_FLAG
 KBUILD_CPPFLAGS += -DOPPO_RELEASE_FLAG
 KBUILD_CFLAGS += -DCONFIG_OPPO_REALEASE_BUILD
 KBUILD_CPPFLAGS += -DCONFIG_OPPO_REALEASE_BUILD
 endif
-ifeq ($(filter cmcctest cmccfield allnetcttest,$(NET_BUILD_TYPE)),)
+ifneq ($(filter cmcctest cmccfield allnetcttest,$(NET_BUILD_TYPE)),)
 KBUILD_CFLAGS += -DOPPO_RELEASE_FLAG
 KBUILD_CPPFLAGS += -DOPPO_RELEASE_FLAG
 endif
