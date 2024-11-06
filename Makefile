@@ -409,7 +409,7 @@ KBUILD_CFLAGS_MODULE  := -DMODULE
 KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
 GCC_PLUGINS_CFLAGS :=
 TARGET_BUILD_VARIANT := user
-TARGET_PRODUCT := full_oppo6771_17065
+TARGET_PRODUCT := full_oppo6765_19451
 
 #ifdef VENDOR_EDIT
 #Haiping.Zhong@PSW.AD.BuildConfig.BaseConfig.0, 2019/01/08, Add for build root disable dm verity
