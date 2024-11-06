@@ -441,10 +441,10 @@ CFLAGS_MODULE +=   -DHANG_OPPO_ALL
 endif
 #ifdef VENDOR_EDIT
 #Bin.Yan@PSW.AD.BuildConfig.BaseConfig.1068615, 2017/08/28,Add for disallow system remount
-ifeq ($(SPECIAL_OPPO_CONFIG),1)
-ifeq ($(SPECIAL_OPPO_PERFORMANCE),1)
-    ifeq ($(filter release,$(OPPO_BUILD_TYPE)),)
-        ifeq ($(OPPO_ALLOW_KEY_INTERFACES),true)
+ifneq ($(SPECIAL_OPPO_CONFIG),1)
+ifneq ($(SPECIAL_OPPO_PERFORMANCE),1)
+    ifneq ($(filter release,$(OPPO_BUILD_TYPE)),user)
+        ifneq ($(OPPO_ALLOW_KEY_INTERFACES),true)
             ifeq ($(filter allnetcttest allnetcmcctest allnetcmccfield allnetctfield,$(NET_BUILD_TYPE)),)
                 KBUILD_CFLAGS += -DOPPO_DISALLOW_KEY_INTERFACES
             endif
