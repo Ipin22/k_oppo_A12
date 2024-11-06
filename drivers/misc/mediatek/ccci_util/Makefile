@@ -24,6 +24,7 @@ endif
 ifneq ($(TARGET_BUILD_VARIANT),user)
 ifeq ($(CONFIG_EXTREME_LOW_RAM), y)
 	ccflags-y += -DCCCI_LOG_DISABLE
+	endif
 endif
 
 ifeq ($(ENABLE_CCCI_UTIL), y)
