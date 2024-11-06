@@ -433,7 +433,7 @@ endif
 #//Liang.Zhang@PSW.TECH.Bootup, 2018/10/19, Add for kernel monitor whole bootup
 #ifdef HANG_OPPO_ALL
 #Kun Hu@TECH.BSP.Stability.PROJECT_PHOENIX, 2019/06/08, Remove phoenix for Self Stability Test Version
-ifeq ($(SPECIAL_OPPO_CONFIG),1)
+ifneq ($(SPECIAL_OPPO_CONFIG),1)
 KBUILD_CFLAGS +=   -DHANG_OPPO_ALL
 KBUILD_CPPFLAGS += -DHANG_OPPO_ALL
 CFLAGS_KERNEL +=   -DHANG_OPPO_ALL
@@ -475,8 +475,8 @@ endif
 #OPPO_SLUB_TEST := true
 
 
-ifeq ($(BUILD_CONFIG),release)
-    ifneq ($(SPECIAL_OPPO_CONFIG),1)
+ifneq ($(BUILD_CONFIG),release)
+    ifeq ($(SPECIAL_OPPO_CONFIG),1)
         OPPO_SLUB_TEST :=
         OPPO_KASAN_TEST :=
         OPPO_KMEMLEAK_TEST :=
